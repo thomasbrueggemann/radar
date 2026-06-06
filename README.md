@@ -1,23 +1,9 @@
 <div align="center">
-<pre>
-           ·············
-       ····             ····
-    ···                     ··╱
-  ···                      ╱╱╱╱╱·
- ···                    ╱╱╱╱╱╱····
-···        ●         ╱╱╱╱╱╱········
-··                ╱╱╱╱╱······    ··
-··               ◉╱╱·            ··
-··                               ··
-···      ●                      ···
- ···                           ···
-  ···                         ···
-    ···         ●           ···
-       ····             ····
-           ·············
-</pre>
 
-<strong>radar</strong> — your open GitHub PRs on a live sweep
+<img src="radar.png" alt="radar — a live TUI of your recently opened GitHub PRs" width="820">
+
+<em>your open GitHub PRs on a live sweep</em>
+
 </div>
 
 # radar
