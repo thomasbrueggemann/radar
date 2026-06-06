@@ -1,0 +1,7 @@
+# Python virtualenv (recreate with: python3 -m venv .venv && .venv/bin/pip install rich)
+.venv/
+
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+.DS_Store

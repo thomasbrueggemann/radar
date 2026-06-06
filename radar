@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Launcher: runs the monitor with the project's virtualenv, from anywhere.
+# Resolves symlinks so it works when called via a PATH symlink (e.g. ~/.local/bin/radar).
+set -euo pipefail
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+exec "$DIR/.venv/bin/python" "$DIR/radar.py" "$@"
