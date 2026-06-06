@@ -15,7 +15,7 @@ A little ASCII radar sweep spins in the header (each tracked PR is a blip that p
 when the beam passes over it), and the whole view is centered on screen. The `gh`
 fetch runs on a background thread so the sweep stays smooth while data loads.
 
-Columns: **repo · PR# (clickable) · title · CI status · open review threads · last commit**
+Columns: **repo · PR# (clickable) · title · CI checks (✓ green / ● pending / ✗ failed) · conflicts (✓ clean / ✗ conflicting) · open review threads · last commit**
 
 It reads data through your existing `gh` login (one GraphQL search call per refresh),
 so there's nothing to configure.

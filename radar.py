@@ -5,7 +5,7 @@ radar — a live TUI for the GitHub PRs you recently opened.
 Shows every open PR you authored within the last N hours (default 48) and keeps
 the table refreshed every few seconds. For each PR it displays:
 
-  repo · #number (clickable) · title · CI status · open review threads · last commit
+  repo · #number (clickable) · title · CI checks (✓/●/✗) · conflicts · review threads · last commit
 
 A little ASCII radar sweep spins in the header while it works; each tracked PR
 shows up as a blip that lights up when the beam passes over it.
@@ -43,8 +43,9 @@ from rich.text import Text
 MAX_CONTENT_WIDTH = 124
 
 # A single search returns every field the table needs. statusCheckRollup may be
-# null (no CI configured / no checks yet); reviewThreads is capped at 100, which
-# is plenty for counting unresolved threads on a normal PR.
+# null (no CI configured / no checks yet); its contexts hold the individual checks
+# we count by outcome. mergeable tells us about conflicts (UNKNOWN while GitHub is
+# still computing it). reviewThreads is capped at 100, plenty for a normal PR.
 GRAPHQL_QUERY = """
 query($q: String!) {
   search(query: $q, type: ISSUE, first: 100) {
@@ -56,12 +57,22 @@ query($q: String!) {
         isDraft
         createdAt
         updatedAt
+        mergeable
         repository { name nameWithOwner }
         commits(last: 1) {
           nodes {
             commit {
               committedDate
-              statusCheckRollup { state }
+              statusCheckRollup {
+                state
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { status conclusion }
+                    ... on StatusContext { state }
+                  }
+                }
+              }
             }
           }
         }
@@ -72,15 +83,11 @@ query($q: String!) {
 }
 """
 
-# Map a GraphQL StatusState to (symbol, label, rich-style).
-CI_STATES = {
-    "SUCCESS":  ("✓", "passing", "bold green"),
-    "FAILURE":  ("✗", "failing", "bold red"),
-    "ERROR":    ("✗", "error",   "bold red"),
-    "PENDING":  ("●", "running", "bold yellow"),
-    "EXPECTED": ("●", "queued",  "bold yellow"),
-}
-CI_NONE = ("–", "no checks", "dim")
+# How a single check's outcome maps to a bucket. CheckRun.conclusion / StatusContext.state
+# values not listed here (PENDING, EXPECTED, QUEUED, IN_PROGRESS, WAITING, None for an
+# in-flight CheckRun, …) count as pending.
+CI_GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+CI_FAILED = {"FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
 
 # --- animation tuning ---------------------------------------------------------
 FPS = 12                  # display refreshes per second
@@ -259,12 +266,47 @@ def build_header(prs: list[dict] | None, error: str | None,
     return header
 
 
-def ci_cell(pr: dict) -> Text:
+def ci_counts(pr: dict) -> tuple[int, int, int]:
+    """Tally the latest commit's checks into (green, pending, failed)."""
     commits = pr["commits"]["nodes"]
     rollup = commits[0]["commit"]["statusCheckRollup"] if commits else None
-    state = rollup["state"] if rollup else None
-    symbol, label, style = CI_STATES.get(state, CI_NONE)
-    return Text(f"{symbol} {label}", style=style)
+    if not rollup:
+        return (0, 0, 0)
+    green = pending = failed = 0
+    for ctx in rollup.get("contexts", {}).get("nodes", []):
+        # CheckRun reports a conclusion (null until COMPLETED); StatusContext a state.
+        outcome = ctx.get("conclusion") if ctx.get("__typename") == "CheckRun" else ctx.get("state")
+        if outcome in CI_GREEN:
+            green += 1
+        elif outcome in CI_FAILED:
+            failed += 1
+        else:
+            pending += 1
+    return (green, pending, failed)
+
+
+def ci_cell(pr: dict, width: int = 1) -> Text:
+    green, pending, failed = ci_counts(pr)
+    if green + pending + failed == 0:
+        return Text("– none", style="dim")
+    cell = Text()
+    for i, (symbol, count, active) in enumerate(
+        (("✓", green, "bold green"), ("●", pending, "bold yellow"), ("✗", failed, "bold red"))):
+        if i:
+            cell.append(" ")
+        # pad each count to a shared width so the ●/✗ groups line up across rows
+        cell.append(f"{symbol}{count:<{width}}", style=active if count else "dim")  # zeros recede
+    return cell
+
+
+def conflict_cell(pr: dict) -> Text:
+    """✓ clean / ✗ conflicting; '?' while GitHub is still computing mergeability."""
+    mergeable = pr.get("mergeable")
+    if mergeable == "CONFLICTING":
+        return Text("✗", style="bold red")
+    if mergeable == "MERGEABLE":
+        return Text("✓", style="bold green")
+    return Text("?", style="dim")
 
 
 def threads_cell(pr: dict) -> Text:
@@ -298,8 +340,12 @@ def build_table(prs: list[dict], now: datetime, width: int) -> Table:
     table.add_column("PR", no_wrap=True, justify="right")
     table.add_column("title", ratio=1, no_wrap=True, overflow="ellipsis")
     table.add_column("CI", no_wrap=True)
+    table.add_column("conflicts", no_wrap=True, justify="center")
     table.add_column("threads", justify="right", no_wrap=True)
     table.add_column("last commit", no_wrap=True, justify="right", style="dim")
+
+    # widest single count across every PR, so all CI cells pad to the same width
+    ci_width = max((len(str(c)) for pr in prs for c in ci_counts(pr)), default=1)
 
     for pr in prs:
         title = pr["title"]
@@ -309,7 +355,8 @@ def build_table(prs: list[dict], now: datetime, width: int) -> Table:
             pr["repository"]["name"],
             pr_number_cell(pr),
             Text.from_markup(title),
-            ci_cell(pr),
+            ci_cell(pr, ci_width),
+            conflict_cell(pr),
             threads_cell(pr),
             commit_cell(pr, now),
         )
