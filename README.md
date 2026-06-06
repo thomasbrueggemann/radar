@@ -21,7 +21,7 @@
 # radar
 
 A live terminal dashboard for the GitHub PRs you recently opened. It shows every
-**open PR you authored within the last 24h** and refreshes every 5 seconds.
+**open PR you authored within the last 48h** and refreshes every 5 seconds.
 
 A little ASCII radar sweep spins in the header (each tracked PR is a blip that pings
 when the beam passes over it), and the whole view is centered on screen. The `gh`
@@ -35,7 +35,7 @@ so there's nothing to configure.
 ## Run
 
 ```bash
-./radar                 # last 24h, refresh every 5s
+./radar                 # last 48h, refresh every 5s
 ./radar --hours 12      # widen/narrow the window
 ./radar --interval 10   # poll less often
 ./radar --no-drafts     # hide draft PRs

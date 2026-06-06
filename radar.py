@@ -2,7 +2,7 @@
 """
 radar — a live TUI for the GitHub PRs you recently opened.
 
-Shows every open PR you authored within the last N hours (default 24) and keeps
+Shows every open PR you authored within the last N hours (default 48) and keeps
 the table refreshed every few seconds. For each PR it displays:
 
   repo · #number (clickable) · title · CI status · Copilot agent session ·
@@ -16,7 +16,7 @@ already-authenticated `gh` CLI, so there is no token to manage here. The fetch r
 on a background thread so the sweep keeps spinning smoothly while data loads.
 
 Usage:
-  ./radar                 # last 24h, refresh every 5s
+  ./radar                 # last 48h, refresh every 5s
   ./radar --hours 12 --interval 10
   ./radar --no-drafts     # hide draft PRs
 
@@ -100,8 +100,8 @@ RADAR_PERIOD = 24         # frames per full sweep revolution (~2s at 12fps)
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Live TUI for your recently opened GitHub PRs.")
-    p.add_argument("--hours", type=int, default=24,
-                   help="Only show PRs created within the last N hours (default: 24).")
+    p.add_argument("--hours", type=int, default=48,
+                   help="Only show PRs created within the last N hours (default: 48).")
     p.add_argument("--interval", type=float, default=5.0,
                    help="Refresh interval in seconds (default: 5).")
     p.add_argument("--no-drafts", action="store_true", help="Hide draft PRs.")
