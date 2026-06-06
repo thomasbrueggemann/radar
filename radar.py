@@ -5,8 +5,7 @@ radar — a live TUI for the GitHub PRs you recently opened.
 Shows every open PR you authored within the last N hours (default 48) and keeps
 the table refreshed every few seconds. For each PR it displays:
 
-  repo · #number (clickable) · title · CI status · Copilot agent session ·
-  open review threads · last commit
+  repo · #number (clickable) · title · CI status · open review threads · last commit
 
 A little ASCII radar sweep spins in the header while it works; each tracked PR
 shows up as a blip that lights up when the beam passes over it.
@@ -56,7 +55,7 @@ query($q: String!) {
         url
         isDraft
         createdAt
-        headRefName
+        updatedAt
         repository { name nameWithOwner }
         commits(last: 1) {
           nodes {
@@ -82,14 +81,6 @@ CI_STATES = {
     "EXPECTED": ("●", "queued",  "bold yellow"),
 }
 CI_NONE = ("–", "no checks", "dim")
-
-# The Copilot coding agent runs as a GitHub Actions "dynamic" workflow run named
-# exactly this; an in-progress run on a PR's head branch ≈ a live agent session.
-# GitHub exposes no official session API yet (community request #185347), so we
-# infer it from Actions runs.
-COPILOT_RUN_NAME = "Running Copilot cloud agent"
-COPILOT_ACTIVE_STATUSES = {"in_progress", "queued", "requested", "waiting", "pending"}
-SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 # --- animation tuning ---------------------------------------------------------
 FPS = 12                  # display refreshes per second
@@ -128,7 +119,7 @@ def humanize_age(dt: datetime, now: datetime) -> str:
 def fetch_prs(hours: int, include_drafts: bool) -> list[dict]:
     """Run the GraphQL search through `gh` and return the PR nodes (newest first)."""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    query = f"is:pr is:open author:@me created:>={since} sort:created-desc"
+    query = f"is:pr is:open author:@me created:>={since} sort:updated-desc"
     if not include_drafts:
         query += " draft:false"
 
@@ -142,35 +133,9 @@ def fetch_prs(hours: int, include_drafts: bool) -> list[dict]:
     payload = json.loads(proc.stdout)
     if "errors" in payload:
         raise RuntimeError("; ".join(e.get("message", str(e)) for e in payload["errors"]))
-    return payload["data"]["search"]["nodes"]
-
-
-def copilot_active_branches(repo: str) -> set[str]:
-    """Head branches in `repo` (owner/name) with a live Copilot coding-agent run."""
-    path = (f"/repos/{repo}/actions/runs"
-            "?event=dynamic&per_page=50&exclude_pull_requests=true")
-    try:
-        proc = subprocess.run(["gh", "api", path],
-                              capture_output=True, text=True, timeout=10)
-        if proc.returncode != 0:
-            return set()
-        runs = json.loads(proc.stdout).get("workflow_runs", [])
-    except Exception:
-        return set()  # Actions disabled, no access, or timeout → treat as no session
-    return {r["head_branch"] for r in runs
-            if r.get("name") == COPILOT_RUN_NAME
-            and r.get("status") in COPILOT_ACTIVE_STATUSES
-            and r.get("head_branch")}
-
-
-def annotate_copilot_sessions(prs: list[dict]) -> None:
-    """Tag each PR with `copilotRunning`; one Actions query per distinct repo."""
-    by_repo: dict[str, set[str]] = {}
-    for pr in prs:
-        repo = pr["repository"]["nameWithOwner"]
-        if repo not in by_repo:
-            by_repo[repo] = copilot_active_branches(repo)
-        pr["copilotRunning"] = pr.get("headRefName") in by_repo[repo]
+    nodes = payload["data"]["search"]["nodes"]
+    nodes.sort(key=lambda pr: pr.get("updatedAt", ""), reverse=True)  # most recently active first
+    return nodes
 
 
 class Fetcher:
@@ -195,9 +160,8 @@ class Fetcher:
 
     def _run(self) -> None:
         try:
-            prs = fetch_prs(self.hours, self.include_drafts)
-            annotate_copilot_sessions(prs)
-            result: tuple[list[dict] | None, str | None] = (prs, None)
+            result: tuple[list[dict] | None, str | None] = (
+                fetch_prs(self.hours, self.include_drafts), None)
         except Exception as exc:  # surfaced in the UI, thread stays alive-safe
             result = (None, str(exc))
         with self._lock:
@@ -303,14 +267,6 @@ def ci_cell(pr: dict) -> Text:
     return Text(f"{symbol} {label}", style=style)
 
 
-def copilot_cell(pr: dict, frame: int) -> Text:
-    """Whether a Copilot coding-agent session is live on this PR (animated spinner)."""
-    if pr.get("copilotRunning"):
-        spin = SPINNER_FRAMES[(frame // 2) % len(SPINNER_FRAMES)]
-        return Text(f"{spin} working", style="bold magenta")
-    return Text("–", style="dim")
-
-
 def threads_cell(pr: dict) -> Text:
     unresolved = sum(1 for t in pr["reviewThreads"]["nodes"] if not t["isResolved"])
     if unresolved == 0:
@@ -331,19 +287,17 @@ def pr_number_cell(pr: dict) -> Text:
     return Text(f"#{pr['number']}", style=f"bold cyan underline link {pr['url']}")
 
 
-def build_table(prs: list[dict], now: datetime, width: int, frame: int) -> Table:
+def build_table(prs: list[dict], now: datetime, width: int) -> Table:
     table = Table(
         width=width,
         header_style="bold",
-        row_styles=["", "on grey7"],
         border_style="grey50",
         pad_edge=False,
     )
-    table.add_column("repo", no_wrap=True, style="green")
+    table.add_column("repo", no_wrap=True)
     table.add_column("PR", no_wrap=True, justify="right")
     table.add_column("title", ratio=1, no_wrap=True, overflow="ellipsis")
     table.add_column("CI", no_wrap=True)
-    table.add_column("copilot", no_wrap=True)
     table.add_column("threads", justify="right", no_wrap=True)
     table.add_column("last commit", no_wrap=True, justify="right", style="dim")
 
@@ -356,7 +310,6 @@ def build_table(prs: list[dict], now: datetime, width: int, frame: int) -> Table
             pr_number_cell(pr),
             Text.from_markup(title),
             ci_cell(pr),
-            copilot_cell(pr, frame),
             threads_cell(pr),
             commit_cell(pr, now),
         )
@@ -370,7 +323,7 @@ def render(console: Console, prs: list[dict] | None, error: str | None,
     header = Align.center(build_header(prs, error, hours, interval, frame, now), width=width)
 
     if prs:
-        body: object = Group(header, Text(""), build_table(prs, now, width, frame))
+        body: object = Group(header, Text(""), build_table(prs, now, width))
     elif error is None and prs is None:
         body = header                       # initial load; header says "scanning…"
     elif error is None:                     # loaded, but nothing in range

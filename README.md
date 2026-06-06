@@ -27,7 +27,7 @@ A little ASCII radar sweep spins in the header (each tracked PR is a blip that p
 when the beam passes over it), and the whole view is centered on screen. The `gh`
 fetch runs on a background thread so the sweep stays smooth while data loads.
 
-Columns: **repo · PR# (clickable) · title · CI status · Copilot agent · open review threads · last commit**
+Columns: **repo · PR# (clickable) · title · CI status · open review threads · last commit**
 
 It reads data through your existing `gh` login (one GraphQL search call per refresh),
 so there's nothing to configure.
@@ -68,19 +68,6 @@ The launcher resolves the symlink back to this folder, so it always uses the bun
 
 The **threads** column counts *unresolved* review threads. If a refresh fails
 (network blip, `gh` hiccup), the last good table stays on screen with a warning banner.
-
-## Copilot agent column
-
-The **copilot** column shows an animated `⠹ working` when a GitHub Copilot coding-agent
-session is **currently live** on that PR, and `–` otherwise.
-
-GitHub does not (yet) expose an official API for coding-agent session status
-([community request #185347](https://github.com/orgs/community/discussions/185347)), so
-radar infers it: the agent runs as a GitHub Actions **`dynamic`** workflow run named
-`Running Copilot cloud agent`, and an *in-progress* run whose head branch matches the PR's
-branch means a session is active. radar makes one extra `actions/runs` query per distinct
-repo per refresh to detect this. If a repo has Actions disabled or you lack access, the
-column simply shows `–`.
 
 ## Authentication
 
