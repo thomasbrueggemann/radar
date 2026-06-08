@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radar"
+version = "0.1.0"
+description = "Live TUI for the GitHub PRs you recently opened"
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=13",
+]
+
+[project.scripts]
+radar = "radar:main"

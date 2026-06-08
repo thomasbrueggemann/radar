@@ -1,7 +1,10 @@
-# Python virtualenv (recreate with: python3 -m venv .venv && .venv/bin/pip install rich)
+# Python virtualenv (recreate with: python3 -m venv .venv && .venv/bin/pip install -e .)
 .venv/
 
 # Byte-compiled / caches
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# pip editable install artefact
+radar.egg-info/
