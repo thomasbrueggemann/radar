@@ -5,7 +5,7 @@ radar — a live TUI for the GitHub PRs you recently opened.
 Shows every open PR you authored within the last N hours (default 48) and keeps
 the table refreshed every few seconds. For each PR it displays:
 
-  repo · #number (clickable) · title · CI checks (✓/●/✗) · conflicts · review threads · last commit
+  repo · #number (clickable) · title · CI checks (✓/●/✗) · approved (✓) · conflicts · review threads · last commit
 
 A little ASCII radar sweep spins in the header while it works; each tracked PR
 shows up as a blip that lights up when the beam passes over it.
@@ -58,6 +58,7 @@ query($q: String!) {
         createdAt
         updatedAt
         mergeable
+        reviewDecision
         repository { name nameWithOwner }
         commits(last: 1) {
           nodes {
@@ -299,6 +300,14 @@ def ci_cell(pr: dict, width: int = 1) -> Text:
     return cell
 
 
+def approved_cell(pr: dict) -> Text:
+    """✓ if all required reviewers approved, blank otherwise."""
+    decision = pr.get("reviewDecision")
+    if decision == "APPROVED":
+        return Text("✓", style="bold green")
+    return Text("", style="dim")
+
+
 def conflict_cell(pr: dict) -> Text:
     """✓ clean / ✗ conflicting; '?' while GitHub is still computing mergeability."""
     mergeable = pr.get("mergeable")
@@ -340,6 +349,7 @@ def build_table(prs: list[dict], now: datetime, width: int) -> Table:
     table.add_column("PR", no_wrap=True, justify="right")
     table.add_column("title", ratio=1, no_wrap=True, overflow="ellipsis")
     table.add_column("CI", no_wrap=True)
+    table.add_column("appr", no_wrap=True, justify="center")
     table.add_column("conflicts", no_wrap=True, justify="center")
     table.add_column("threads", justify="right", no_wrap=True)
     table.add_column("last commit", no_wrap=True, justify="right", style="dim")
@@ -356,6 +366,7 @@ def build_table(prs: list[dict], now: datetime, width: int) -> Table:
             pr_number_cell(pr),
             Text.from_markup(title),
             ci_cell(pr, ci_width),
+            approved_cell(pr),
             conflict_cell(pr),
             threads_cell(pr),
             commit_cell(pr, now),
